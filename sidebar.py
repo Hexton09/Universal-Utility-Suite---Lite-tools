@@ -54,4 +54,4 @@ def show_sidebar():
             unsafe_allow_html=True
         )
         
-        st.caption("Universal Utility Suite © 2026")
+        st.caption("Universal Utility Suite (Lite tools) © 2026")
