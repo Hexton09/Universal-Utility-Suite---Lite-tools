@@ -7,3 +7,4 @@ pikepdf
 pytesseract
 pdf2image
 Pillow
+moviepy==1.0.3
