@@ -1,4 +1,4 @@
-# 🛠️ Universal Utility Suite (PDF Lite Pro + IMG Lite)
+# 🛠️ Universal Utility Suite (Lite tools) 
 
 A fast, lightweight, and serverless web application built with Python and Streamlit. This universal suite combines powerful PDF manipulation tools and smart image processing utilities into a single, easy-to-use platform. 
 
