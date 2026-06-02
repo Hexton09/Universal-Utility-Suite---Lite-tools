@@ -9,6 +9,9 @@ import pytesseract
 from pdf2image import convert_from_bytes
 import base64
 
+from sidebar import show_sidebar
+show_sidebar()
+
 st.set_page_config(page_title="PDF Tools", page_icon="📄", layout="wide")
 
 st.title("📄 PDF Tools")

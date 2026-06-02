@@ -3,6 +3,10 @@ import tempfile
 import os
 from moviepy.editor import VideoFileClip
 
+
+from sidebar import show_sidebar
+show_sidebar()
+
 st.set_page_config(page_title="Video Tools", page_icon="🎬", layout="centered")
 
 st.title("🎬 Video Lite: Trim, GIF & Audio")

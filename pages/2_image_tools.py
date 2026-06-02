@@ -3,6 +3,9 @@ from PIL import Image
 import io
 import zipfile
 
+from sidebar import show_sidebar
+show_sidebar()
+
 st.set_page_config(page_title="Image Tools", page_icon="🖼️", layout="centered")
 
 st.title("🖼️ Image Compressor & Resizer")

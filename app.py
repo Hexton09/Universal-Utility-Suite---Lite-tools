@@ -1,5 +1,8 @@
 import streamlit as st
 
+from sidebar import show_sidebar
+show_sidebar()
+
 st.set_page_config(page_title="Universal Utility Suite", page_icon="🛠️", layout="centered")
 
 # --- Custom CSS for Bulletproof Color-Coded Tile Buttons ---
@@ -85,17 +88,19 @@ st.markdown("""
 st.markdown("<h1 class='title-text'>🛠️ Universal Utility Suite</h1>", unsafe_allow_html=True)
 st.markdown("<h4 class='subtitle-text'>Fast, private, in-memory processing. Select a toolkit below to get started.</h4>", unsafe_allow_html=True)
 
-# --- Tile Layout ---
-col1, col2, col3 = st.columns(3)
+# --- Tile Layout (2x2 Grid) ---
+col1, col2 = st.columns(2)
 
 with col1:
     if st.button("📄\n\n**PDF Tools**\n\nMerge, compress, split, convert, and secure your documents.", use_container_width=True):
         st.switch_page("pages/1_pdf_tools.py")
+        
+    if st.button("🎬\n\n**Video Tools**\n\nTrim, extract audio, and create GIFs from your videos.", use_container_width=True):
+        st.switch_page("pages/3_video_tools.py")
 
 with col2:
     if st.button("🖼️\n\n**Image Tools**\n\nBatch resize, compress, and convert image formats easily.", use_container_width=True):
         st.switch_page("pages/2_image_tools.py")
-
-with col3:
-    if st.button("🎬\n\n**Video Tools**\n\nTrim, extract audio, and create GIFs from your videos.", use_container_width=True):
-        st.switch_page("pages/3_video_tools.py")
+        
+    if st.button("🔻\n\n**Media Downloader**\n\nExtract high-quality video or audio directly from YouTube.", use_container_width=True):
+        st.switch_page("pages/4_youtube_tools.py")
