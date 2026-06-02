@@ -4,6 +4,7 @@ import tempfile
 import os
 import requests
 import re
+import subprocess
 
 # Config must be called before everything else
 st.set_page_config(page_title="YouTube/Instagram Tools", page_icon="🔻", layout="centered")
@@ -41,7 +42,6 @@ url = st.session_state.yt_url
 # --- 2. DOWNLOAD MODE TOGGLE ---
 st.markdown("### ⚙️ Download Settings")
 
-# Toggle between Free (yt-dlp) and API (Fallback)
 use_api = st.toggle("Use API Fallback (Enable if downloads are blocked)", value=False)
 
 if use_api:
@@ -51,7 +51,6 @@ else:
 
 # --- 3. EXECUTE LOGIC ---
 if url:
-    # We will store parsed media information here globally for the UI
     info = {}
     is_instagram = "instagram.com" in url.lower()
     api_error_triggered = False
@@ -61,7 +60,6 @@ if url:
     try:
         api_key = st.secrets.get("RAPIDAPI_KEY", default_key)
     except Exception:
-        # Fallback to hardcoded key if secrets subsystem isn't initialized locally
         api_key = default_key
 
     headers = {
@@ -77,28 +75,22 @@ if url:
                 # ==========================================
                 # METADATA FETCH: API MODE
                 # ==========================================
-                # 1. Extract the unique 11-character video ID from the YouTube URL
                 yt_id_match = re.search(r'(?:v=|/v/|youtu\.be/|/embed/|/shorts/)([\w-]{11})', url)
                 video_id = yt_id_match.group(1) if yt_id_match else url
                 
-                # 2. Use 'videoId' parameter instead of 'url' as required by RapidAPI
                 response = requests.get(api_url, headers=headers, params={"videoId": video_id})
                 response_data = response.json()
                 
-                # Check for "Success" based on the exact JSON payload provided
                 if response.status_code == 200 and response_data.get("errorId") == "Success":
-                    
                     info['title'] = response_data.get('title', 'API Managed Media')
                     info['duration'] = int(response_data.get('lengthSeconds', 0))
                     
-                    # Safely grab the highest quality thumbnail
                     thumbnails = response_data.get("thumbnails", [])
                     if thumbnails:
                         info['thumbnail'] = thumbnails[-1].get("url", "")
                     else:
                         info['thumbnail'] = ""
                     
-                    # Stash response data in session state to pass to the downloader block
                     st.session_state["api_response"] = response_data
                 else:
                     api_error_triggered = True
@@ -158,65 +150,132 @@ if url:
                             # ==========================================
                             # DOWNLOAD: API MODE
                             # ==========================================
-                            with st.spinner("Processing download via RapidAPI..."):
-                                cached_api_data = st.session_state.get("api_response", {})
-                                
-                                download_url = None
-                                
-                                # If User Wants Audio Only
-                                if "Audio Only" in quality_choice:
-                                    audio_items = cached_api_data.get("audios", {}).get("items", [])
-                                    if audio_items:
-                                        # Grab the first available audio stream
-                                        download_url = audio_items[0].get("url")
-                                        mime_type = "audio/mp4"
-                                        ext = "m4a"
-                                
-                                # If User Wants Video
+                            cached_api_data = st.session_state.get("api_response", {})
+                            safe_title = "".join([c for c in info.get('title', 'video') if c.isalpha() or c.isdigit() or c==' ']).rstrip()
+                            
+                            # Disguise the Python request as a normal Web Browser so Google doesn't block the download
+                            browser_headers = {
+                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+                            }
+                            
+                            # --- AUDIO ONLY ---
+                            if "Audio Only" in quality_choice:
+                                audio_items = cached_api_data.get("audios", {}).get("items", [])
+                                if audio_items:
+                                    download_url = audio_items[0].get("url")
+                                    with st.spinner("Routing audio file for direct download..."):
+                                        try:
+                                            audio_resp = requests.get(download_url, headers=browser_headers, stream=True, timeout=15)
+                                            st.download_button(
+                                                label="📥 Click Here to Download Audio",
+                                                data=audio_resp.content,
+                                                file_name=f"{safe_title}.m4a",
+                                                mime="audio/mp4",
+                                                use_container_width=True
+                                            )
+                                        except Exception as e:
+                                            st.error("❌ Failed to download audio from Google servers.")
                                 else:
-                                    video_items = cached_api_data.get("videos", {}).get("items", [])
-                                    
-                                    # Very basic resolution matching logic based on the payload
-                                    target_quality = "360p" # fallback
-                                    if "1080p" in quality_choice: target_quality = "1080p"
-                                    elif "720p" in quality_choice: target_quality = "720p"
-                                    elif "480p" in quality_choice: target_quality = "480p"
+                                    st.error("❌ Could not locate an audio stream.")
+                            
+                            # --- VIDEO ---
+                            else:
+                                video_items = cached_api_data.get("videos", {}).get("items", [])
+                                audio_items = cached_api_data.get("audios", {}).get("items", [])
+                                
+                                target_quality = "360p"
+                                if "1080p" in quality_choice: target_quality = "1080p"
+                                elif "720p" in quality_choice: target_quality = "720p"
+                                elif "480p" in quality_choice: target_quality = "480p"
 
-                                    for item in video_items:
-                                        if item.get("quality") == target_quality and item.get("extension") == "mp4":
-                                            download_url = item.get("url")
-                                            break
-                                    
-                                    # If the exact resolution isn't found, grab the very first mp4 available
-                                    if not download_url and video_items:
-                                        for item in video_items:
-                                             if item.get("extension") == "mp4":
-                                                download_url = item.get("url")
-                                                break
+                                best_video = None
+                                for item in video_items:
+                                    if item.get("quality") == target_quality and item.get("extension") == "mp4":
+                                        best_video = item
+                                        break
+                                        
+                                if not best_video and video_items:
+                                    best_video = next((i for i in video_items if i.get("extension") == "mp4"), video_items[0])
 
-                                    mime_type = "video/mp4"
-                                    ext = "mp4"
-
-                                if download_url:
-                                    st.success("✅ Download link verified!")
+                                if best_video:
+                                    # SCENARIO A: Low Quality / Native Audio (Bypasses Merge)
+                                    if best_video.get("hasAudio"):
+                                        with st.spinner("Routing video file for direct download..."):
+                                            try:
+                                                video_resp = requests.get(best_video.get("url"), headers=browser_headers, stream=True, timeout=15)
+                                                st.download_button(
+                                                    label="📥 Click Here to Download Video",
+                                                    data=video_resp.content,
+                                                    file_name=f"{safe_title}.mp4",
+                                                    mime="video/mp4",
+                                                    use_container_width=True
+                                                )
+                                            except Exception as e:
+                                                st.error("❌ Failed to download video from Google servers.")
                                     
-                                    # Provide the direct link as an HTML button for the user to download instantly
-                                    # Streaming large files through Streamlit's memory can cause server crashes,
-                                    # so we provide the raw API url directly to the user's browser.
-                                    
-                                    safe_title = "".join([c for c in info.get('title', 'video') if c.isalpha() or c.isdigit() or c==' ']).rstrip()
-                                    
-                                    st.markdown(
-                                        f'<a href="{download_url}" download="{safe_title}.{ext}" target="_blank">'
-                                        f'<button style="width:100%; background-color:#FF4B4B; color:white; border:none; padding:10px; border-radius:5px; cursor:pointer;">'
-                                        f'📥 Click Here to Save to Device'
-                                        f'</button></a>',
-                                        unsafe_allow_html=True
-                                    )
+                                    # SCENARIO B: High Quality 1080p (Requires FFmpeg Muxing)
+                                    else:
+                                        best_audio = audio_items[0] if audio_items else None
+                                        if best_audio:
+                                            st.info("Starting High-Quality Compilation...")
+                                            progress_bar = st.progress(0)
+                                            
+                                            with tempfile.TemporaryDirectory() as temp_dir:
+                                                vid_path = os.path.join(temp_dir, "vid.mp4")
+                                                aud_path = os.path.join(temp_dir, "aud.m4a")
+                                                out_path = os.path.join(temp_dir, f"{safe_title}.mp4")
+                                                
+                                                try:
+                                                    # Step 1: Pre-download Video (Using large 1MB chunks)
+                                                    st.write(f"📥 1/3 Downloading {best_video.get('quality')} video track...")
+                                                    v_res = requests.get(best_video.get("url"), headers=browser_headers, stream=True, timeout=15)
+                                                    with open(vid_path, "wb") as f:
+                                                        for chunk in v_res.iter_content(chunk_size=1024 * 1024):
+                                                            if chunk: f.write(chunk)
+                                                    progress_bar.progress(33)
+                                                                
+                                                    # Step 2: Pre-download Audio
+                                                    st.write("📥 2/3 Downloading audio track...")
+                                                    a_res = requests.get(best_audio.get("url"), headers=browser_headers, stream=True, timeout=15)
+                                                    with open(aud_path, "wb") as f:
+                                                        for chunk in a_res.iter_content(chunk_size=1024 * 1024):
+                                                            if chunk: f.write(chunk)
+                                                    progress_bar.progress(66)
+                                                                
+                                                    # Step 3: Fast Local Merge
+                                                    st.write("🔄 3/3 Merging tracks together...")
+                                                    cmd = [
+                                                        "ffmpeg", "-y",
+                                                        "-i", vid_path,
+                                                        "-i", aud_path,
+                                                        "-c", "copy",
+                                                        out_path
+                                                    ]
+                                                    
+                                                    # Run ffmpeg
+                                                    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                                    progress_bar.progress(100)
+                                                    
+                                                    with open(out_path, "rb") as f:
+                                                        st.success("✅ High-Quality merge complete!")
+                                                        st.download_button(
+                                                            label="📥 Save Final HD Video to Device",
+                                                            data=f.read(),
+                                                            file_name=f"{safe_title}.mp4",
+                                                            mime="video/mp4",
+                                                            use_container_width=True
+                                                        )
+                                                        
+                                                except requests.exceptions.RequestException as e:
+                                                    st.error(f"❌ Network timeout connecting to Google Servers. Please try again.")
+                                                except FileNotFoundError:
+                                                    st.error("❌ System Error: FFmpeg is not installed on this machine. (Required for 1080p merges).")
+                                                except subprocess.CalledProcessError:
+                                                    st.error("❌ FFmpeg failed to merge the tracks.")
+                                        else:
+                                            st.error("❌ Found high-quality video, but no audio track to merge.")
                                 else:
-                                    st.error("❌ Could not locate a compatible media stream for this resolution.")
-                                    with st.expander("View Diagnostic API Data"):
-                                        st.json(cached_api_data)
+                                    st.error("❌ Could not locate a compatible video stream.")
                         else:
                             # ==========================================
                             # DOWNLOAD: STANDARD MODE (yt-dlp)
